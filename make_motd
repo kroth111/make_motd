@@ -1,119 +1,176 @@
-#!/bin/ksh
-# Quick Script to update a systems /etc/motd with the Current
-# Software Versions.
+#!/bin/bash
 #
-# Note: The date recorded is the current system date.
+# Print out info about this system
 #
 # v0.1 sfennell
-# v0.2 kroth
+# v1.0 kroth
 #
-DLINE="=================================================================="
-CP='/bin/cp'
-DATE=`/bin/date`
-HOSTNAME=`/bin/hostname`
-IP=`/bin/hostname -i`
-RPM='/bin/rpm'
-RPMDB='/var/tmp/rpm.db'
-LIC='/home/arc/ISP/Tables/license.dat'
-LSP='/opt/OpenUMS_default/lsp2srv/etc/lsp.rc'
-NGMS='/opt/ngms/etc/ptp.conf'
-HEAVY=`cat /proc/devices | grep HbaApiDev |  sed 's/.*HbaApiDev.*/HbaApiDev/'`
-LITE=`cat /proc/devices | grep megadev |  sed 's/.*megadev.*/megadev/'`
-LANGLEY=`cat /etc/fstab | grep floppy | wc -l | sed 's/\s*//'`
-#LANGLEY=`cat /proc/devices | grep mercd  | sed 's/.*mercd.*/mercd/'`
-MULLINS=`cat /proc/devices | grep netlink | sed 's/.*netlink.*/netlink/'`
-CPUSPEED=`cat /proc/cpuinfo | grep "cpu MHz" | head -1 | sed 's/.*: //'`
-MEM=`cat /proc/meminfo | grep Total | head -1 | sed 's/MemTotal:\s*//'`
+# @(#)$Id: v1.0$
 
-OUTFILE="/etc/motd"
+OS=`uname`
+docker=`cat /proc/1/cgroup |& grep -ci docker`
 
-echo " Enter a note for this system (Ex: database): "
-read NOTE
-echo " Enter your username (Ex: dilbert): "
-read NAME
+# configure grep options
+if [ "Linux" == $OS ]; then
+   GREPOPTS="-i --color "
+   GREPONCE="-m 1 "
+   alpine=`cat /etc/issue  | grep -ic alpine`
+   if [[ $alpine > 0 ]]; then
+      OS="Alpine"
+      GREPOPTS="-i "
+   elif [[ $docker > 0 ]]; then
+         GREPOPTS="-i "
+   fi
+else
+   GREPOPTS="-i "
+   GREPONCE=" "
+fi
 
-echo -e "Working..\c"
-`$RPM -qa | egrep '(CommonPlatform|OpenUMS|ms|ONS-Server|TS-Select|importc|edr_fr|ARTIC|SGF|vap|h323|^ser-|gnugk|pwlib|VAP|myser|mmvg|MSGDUR|servicefind)' | grep -v OpenUMS > $RPMDB`
-MS=`grep ms-[0-9] $RPMDB | wc -l | awk '{print $1}'`
-if [[ $MS > 0 ]]; then 
-   echo -e "\n Does this server contain MS Patches? (y/n): "
-   read MPATCH
-   if [[ $MPATCH == 'y' ]]; then
-      echo " Please enter the MS Patch Number (Ex: 3): "
-      read MPLVL
+if [ -e /usr/local/bin/colorout.pl ]; then
+   colorout=/usr/local/bin/colorout.pl
+elif [ -e ~/tools/colorout.pl ]; then
+   colorout=~/tools/colorout.pl
+elif [ -e ~/bin/colorout.pl ]; then
+   colorout=~/bin/colorout.pl
+else
+   colorout="grep $GREPOPTS . # "
+fi
+
+# print out custom header for this machine
+if [ -e ~/etc/motd ]; then
+   if [[ $OS =~ ^CYGWIN* ]]; then
+        files=(~/etc/*)
+        cat `printf "%s\n" "${files[RANDOM % ${#files[@]}]}"`
+   elif [ -n "$COMSPEC" -a -x "$COMSPEC" ]; then 
+      echo $0: this script does not support Windows \:\(
+      exit
+   else
+     # works with Redhat Enterprise 5+ and Solaris
+     files=(~/etc/*)
+     cat `printf "%s\n" "${files[RANDOM % ${#files[@]}]}"` | eval "$colorout : red - blue o green = magenta _ yellow , cyan '#' blue"
+  fi
+fi
+
+echo ""
+echo "======================================================================"
+
+if [ "Linux" == $OS ]; then
+   pkglist="echo error: "
+   if [ -e /usr/bin/rpm ]; then
+        pkglist="rpm -qa "
+   fi
+   if [ -e /usr/bin/dpkg ]; then 
+        pkglist="dpkg -l "
    fi
 fi
 
-echo -e ".\c"
+# print out OS type
+uname -a | eval "$colorout linux green alpine green cygwin green sunos red unix blue gnu blue sco red aix red ming yellow"
 
-if [ -f $OUTFILE ]; then
-  $CP $OUTFILE $OUTFILE.bak
-fi
-echo " " > $OUTFILE
-echo "     Hostname: $HOSTNAME ($IP)" >> $OUTFILE
-if [[ $HEAVY == 'HbaApiDev' ]]; then
-      echo "    Host type: Compaq PCI chassis(NGMS heavy) $CPUSPEED Mhz $MEM" >> $OUTFILE
-elif [[ $CPUSPEED > 3000 ]]; then
-     if [[ $LITE == 'megadev' ]]; then
-           echo "    Host type: NGMS LITE Intel IRWINDALE  $CPUSPEED Mhz $MEM" >> $OUTFILE
-     else	   
-           echo "    Host type: Intel IRWINDALE  $CPUSPEED Mhz $MEM" >> $OUTFILE
-     fi   
-elif [[ $CPUSPEED > 2600  ]]; then
-      echo "    Host type: Intel CHESNEE  $CPUSPEED Mhz $MEM" >> $OUTFILE
-elif [[ $CPUSPEED > 2000  ]]; then
-      echo "    Host type: Intel PRESTONIA  $CPUSPEED Mhz $MEM" >> $OUTFILE
-elif [[ $LANGLEY > 0 ]]; then
-      echo "    Host type: Intel LANGLEY  $CPUSPEED Mhz $MEM" >> $OUTFILE
-elif [[ $MULLINS == 'netlink' ]]; then
-      echo "    Host type: Intel MULLINS  $CPUSPEED Mhz $MEM" >> $OUTFILE
-fi
-if [ -f $LIC ]; then
-     LICENSE=`cat $LIC | grep SERVER | sed 's/\r//g'`
-     LICENSES=`cat /home/arc/ISP/Tables/license.dat | grep HOSTID | head -1 | sed 's/.* \([0-9][0-9]*\-[a-z][a-z]*\-20[0-9]*\) \([0-9][0-9]*\) HOSTID.*/\1 \2/' | sed 's/\r//g' | sed 's/.*perm/perm/' | sed 's/ HOSTID.*//'`
-     echo "      License: $LICENSE  $LICENSES ports" >> $OUTFILE 
-fi
-if [ -f $LSP ]; then
-     NODE=`grep -i node $LSP | sed 's/.*= //'`
-     echo "      Node Id: $NODE" >> $OUTFILE
-elif [ -f $NGMS ]; then
-     NODE=`grep NODE $NGMS | sed 's/NODE[^0-9]*//' | sed 's/\([0-9][0-9]*\)[^0-9]*/\1/g'`
-     echo " NGMS Node Id: $NODE" >> $OUTFILE
-fi
-echo "         Note: $NOTE" >> $OUTFILE
-echo $DLINE >> $OUTFILE
-
-echo `grep Platform-[0-9] $RPMDB` >> $OUTFILE
-echo `grep OpenUMS-[0-9] $RPMDB` >> $OUTFILE
-echo `grep UI-[0-9] $RPMDB` >> $OUTFILE
-echo `grep UI-custom-[0-9] $RPMDB` >> $OUTFILE
-
-if [[ $MPATCH == 'y' ]]; then
-   echo `grep ms-[0-9] $RPMDB`"patch"$MPLVL >> $OUTFILE
+# print out OS name/version
+if [[ $OS =~ ^CYGWIN* ]]; then
+     echo
 else
-   echo `grep ms-[0-9] $RPMDB` >> $OUTFILE
+  cmd="cat /etc/*release /etc/*release/* |& egrep $GREPONCE $GREPOPTS 'linux|alpine|sunos|unix|sco|redhat|red hat|red hat enterprise|suse|fedora |centos|cent os|mint|ubuntu|solaris|sun|raspbian'"
+  eval $cmd
 fi
 
-grep ARTIC $RPMDB >> $OUTFILE
+# print info for CPU(s)
+if [ "Linux" == $OS ] || [ "CYGWIN_NT-6.1-WOW" == $OS ] || [ "Alpine" == $OS ]; then
+   # for intel
+   cores=`cat /proc/cpuinfo  | grep "core id" | sort -u | wc -l`
+   cpus=`cat /proc/cpuinfo  | egrep 'physical id' | sort -u| wc -l`
+   cputype=`cat /proc/cpuinfo  | grep 'model name' | sed 's/.*://'| head -1`
+   # for ARM
+   if [ "$cpus" -lt 1 ];then
+         cpus=1
+         cores=`cat /proc/cpuinfo  | egrep 'processor' | sort -u| wc -l`
+   fi
+else
+   cputype=`kstat cpu_info | grep brand | head -1 | sed 's/.*brand  *//'`
+   cpus=`kstat | grep -i cpus | head -1 | awk '{print $2}'`
+   totcores=`kstat | grep -i ncpus | tail -1 | awk '{print $2}'`
+   cores=`echo "$totcores / $cpus" | bc`
+fi
 
-grep -i myser $RPMDB >> $OUTFILE
-grep servicef $RPMDB >> $OUTFILE
+totcores=$(($cpus*$cores))
 
-grep h323 $RPMDB >> $OUTFILE
-grep 'ser-' $RPMDB >> $OUTFILE
-grep gnugk $RPMDB >> $OUTFILE
-grep pwlib $RPMDB >> $OUTFILE
-echo `grep -i vap $RPMDB` >> $OUTFILE
+echo
+echo $cputype
+echo "COREs = $cores/CPU, $totcores total"
+echo " CPUs = $cpus"
+echo
 
-echo -e ".\c"
+# print out CPU usage and memory usage
+if [[ $OS == CYGWIN* ]]; then
+      free
+else
+      top -n 1 | head -5 | tail -4
+fi
+# print out networking
+if [ "Linux" == $OS ]; then
+   echo
+   ifconfig | grep "addr:[0-9]|inet [0-9]" | sed 's/  //g'
+elif [[ $OS == CYGWIN* ]]; then
+      ipconfig | grep -i address
+else
+   ifconfig -a | grep inet | sed 's/  //g'
+fi
 
+echo ""
 
-echo $DLINE >> $OUTFILE
-echo "Last Updated: $DATE" >> $OUTFILE
-echo "By: $NAME" >> $OUTFILE
-echo " " >> $OUTFILE
+# print out any installed product info
+if [ "Linux" == $OS ]; then
+   echo "------------------------------------------------------------"
+   $pkglist | grep $GREPOPTS 'yad'
+   echo
+elif [ "Alpine" == $OS ]; then
+   apk info
+   echo
+fi
 
-echo -e "\nDone!"
-echo " "
-echo " "
-cat $OUTFILE
+# print current login account
+if [ -e /usr/bin/whoami ]; then
+     whoami
+else
+     who am i
+fi
+
+echo "======================================================================"
+echo ""
+
+# print recent logins
+if [[ $OS == CYGWIN* ]]; then
+     echo
+else
+     if [ -e /usr/bin/last ]; then
+          last | head -5
+          echo
+     fi
+fi
+
+if [ -e /usr/bin/docker ]; then
+     echo "------------------------------------------------------------"
+     sudo docker ps | eval "$colorout  healthy green  unheathy bright_red tcp cyan udp magenta days blue ago blue hours green alpine green"
+else
+     if [[ $docker > 0 ]]; then
+        echo "------------------------------------------------------------"
+        echo "This is a docker container!" | eval "$colorout  docker cyan"
+        echo
+        ps -ef
+     fi
+fi
+
+# display raspberry pi logo
+if [ -e /etc/rpi-issue ]; then
+     echo "------------------------------------------------------------"
+     if [ -e /usr/bin/linuxlogo ]; then
+             /usr/bin/linuxlogo
+     else
+            cat /etc/rpi-issue
+     fi
+fi
+
+echo
+
+# That's all folks!
