@@ -1,0 +1,119 @@
+#!/bin/ksh
+# Quick Script to update a systems /etc/motd with the Current
+# Software Versions.
+#
+# Note: The date recorded is the current system date.
+#
+# v0.1 sfennell
+# v0.2 kroth
+#
+DLINE="=================================================================="
+CP='/bin/cp'
+DATE=`/bin/date`
+HOSTNAME=`/bin/hostname`
+IP=`/bin/hostname -i`
+RPM='/bin/rpm'
+RPMDB='/var/tmp/rpm.db'
+LIC='/home/arc/ISP/Tables/license.dat'
+LSP='/opt/OpenUMS_default/lsp2srv/etc/lsp.rc'
+NGMS='/opt/ngms/etc/ptp.conf'
+HEAVY=`cat /proc/devices | grep HbaApiDev |  sed 's/.*HbaApiDev.*/HbaApiDev/'`
+LITE=`cat /proc/devices | grep megadev |  sed 's/.*megadev.*/megadev/'`
+LANGLEY=`cat /etc/fstab | grep floppy | wc -l | sed 's/\s*//'`
+#LANGLEY=`cat /proc/devices | grep mercd  | sed 's/.*mercd.*/mercd/'`
+MULLINS=`cat /proc/devices | grep netlink | sed 's/.*netlink.*/netlink/'`
+CPUSPEED=`cat /proc/cpuinfo | grep "cpu MHz" | head -1 | sed 's/.*: //'`
+MEM=`cat /proc/meminfo | grep Total | head -1 | sed 's/MemTotal:\s*//'`
+
+OUTFILE="/etc/motd"
+
+echo " Enter a note for this system (Ex: database): "
+read NOTE
+echo " Enter your username (Ex: dilbert): "
+read NAME
+
+echo -e "Working..\c"
+`$RPM -qa | egrep '(CommonPlatform|OpenUMS|ms|ONS-Server|TS-Select|importc|edr_fr|ARTIC|SGF|vap|h323|^ser-|gnugk|pwlib|VAP|myser|mmvg|MSGDUR|servicefind)' | grep -v OpenUMS > $RPMDB`
+MS=`grep ms-[0-9] $RPMDB | wc -l | awk '{print $1}'`
+if [[ $MS > 0 ]]; then 
+   echo -e "\n Does this server contain MS Patches? (y/n): "
+   read MPATCH
+   if [[ $MPATCH == 'y' ]]; then
+      echo " Please enter the MS Patch Number (Ex: 3): "
+      read MPLVL
+   fi
+fi
+
+echo -e ".\c"
+
+if [ -f $OUTFILE ]; then
+  $CP $OUTFILE $OUTFILE.bak
+fi
+echo " " > $OUTFILE
+echo "     Hostname: $HOSTNAME ($IP)" >> $OUTFILE
+if [[ $HEAVY == 'HbaApiDev' ]]; then
+      echo "    Host type: Compaq PCI chassis(NGMS heavy) $CPUSPEED Mhz $MEM" >> $OUTFILE
+elif [[ $CPUSPEED > 3000 ]]; then
+     if [[ $LITE == 'megadev' ]]; then
+           echo "    Host type: NGMS LITE Intel IRWINDALE  $CPUSPEED Mhz $MEM" >> $OUTFILE
+     else	   
+           echo "    Host type: Intel IRWINDALE  $CPUSPEED Mhz $MEM" >> $OUTFILE
+     fi   
+elif [[ $CPUSPEED > 2600  ]]; then
+      echo "    Host type: Intel CHESNEE  $CPUSPEED Mhz $MEM" >> $OUTFILE
+elif [[ $CPUSPEED > 2000  ]]; then
+      echo "    Host type: Intel PRESTONIA  $CPUSPEED Mhz $MEM" >> $OUTFILE
+elif [[ $LANGLEY > 0 ]]; then
+      echo "    Host type: Intel LANGLEY  $CPUSPEED Mhz $MEM" >> $OUTFILE
+elif [[ $MULLINS == 'netlink' ]]; then
+      echo "    Host type: Intel MULLINS  $CPUSPEED Mhz $MEM" >> $OUTFILE
+fi
+if [ -f $LIC ]; then
+     LICENSE=`cat $LIC | grep SERVER | sed 's/\r//g'`
+     LICENSES=`cat /home/arc/ISP/Tables/license.dat | grep HOSTID | head -1 | sed 's/.* \([0-9][0-9]*\-[a-z][a-z]*\-20[0-9]*\) \([0-9][0-9]*\) HOSTID.*/\1 \2/' | sed 's/\r//g' | sed 's/.*perm/perm/' | sed 's/ HOSTID.*//'`
+     echo "      License: $LICENSE  $LICENSES ports" >> $OUTFILE 
+fi
+if [ -f $LSP ]; then
+     NODE=`grep -i node $LSP | sed 's/.*= //'`
+     echo "      Node Id: $NODE" >> $OUTFILE
+elif [ -f $NGMS ]; then
+     NODE=`grep NODE $NGMS | sed 's/NODE[^0-9]*//' | sed 's/\([0-9][0-9]*\)[^0-9]*/\1/g'`
+     echo " NGMS Node Id: $NODE" >> $OUTFILE
+fi
+echo "         Note: $NOTE" >> $OUTFILE
+echo $DLINE >> $OUTFILE
+
+echo `grep Platform-[0-9] $RPMDB` >> $OUTFILE
+echo `grep OpenUMS-[0-9] $RPMDB` >> $OUTFILE
+echo `grep UI-[0-9] $RPMDB` >> $OUTFILE
+echo `grep UI-custom-[0-9] $RPMDB` >> $OUTFILE
+
+if [[ $MPATCH == 'y' ]]; then
+   echo `grep ms-[0-9] $RPMDB`"patch"$MPLVL >> $OUTFILE
+else
+   echo `grep ms-[0-9] $RPMDB` >> $OUTFILE
+fi
+
+grep ARTIC $RPMDB >> $OUTFILE
+
+grep -i myser $RPMDB >> $OUTFILE
+grep servicef $RPMDB >> $OUTFILE
+
+grep h323 $RPMDB >> $OUTFILE
+grep 'ser-' $RPMDB >> $OUTFILE
+grep gnugk $RPMDB >> $OUTFILE
+grep pwlib $RPMDB >> $OUTFILE
+echo `grep -i vap $RPMDB` >> $OUTFILE
+
+echo -e ".\c"
+
+
+echo $DLINE >> $OUTFILE
+echo "Last Updated: $DATE" >> $OUTFILE
+echo "By: $NAME" >> $OUTFILE
+echo " " >> $OUTFILE
+
+echo -e "\nDone!"
+echo " "
+echo " "
+cat $OUTFILE

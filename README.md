@@ -1,2 +1,5 @@
 # make_motd
-dynamically create MOTD on login
+
+create MOTD for this system at current software configuration
+
+
